@@ -1,55 +1,63 @@
 const https = require("https");
 const fs = require("fs");
 
-// Your Gemini API key from Google AI Studio
-const API_KEY = "your-api-key";
+const API_KEY = "AIzaSyADyy0EDzXrHWkv0O_qdY8T28y3QP-M5Ik";
+const MODEL = "gemini-2.5-flash";
 
-// Model
-const MODEL = "gemini-2.0-flash";
-// gemni-2.5-flash
-
-// Get user prompt from terminal arguments
 const prompt = process.argv.slice(2).join(" ");
 if (!prompt) {
-  console.log('Usage: node index.js "Describe your backend project requirements here"');
+  console.log('Usage: node index.js "Your prompt"');
   process.exit(1);
 }
 
-// Add instructions to prompt to get code + folder structure + commands
-const enhancedPrompt = `
-this is a backend question.
-Based on the following project requirements, provide:
+function removeComments(code) {
+  return code
+    .replace(/\/\/.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .trim();
+}
 
-1. Full backend code .
-2. Recommended folder structure
-3. Commands to run the backend project
-
-Requirements:
-${prompt}
-
-Please provide plain text output only. Do not include any emojis or color formatting.
-`;
-
-// Request body
 const data = JSON.stringify({
-  contents: [{ parts: [{ text: enhancedPrompt }] }]
+  contents: [
+    {
+      parts: [
+        {
+          text: `
+You are a code generator.
+
+Rules:
+- Output ONLY the final code
+- Do NOT add explanations
+- Do NOT add comments
+- Do NOT use markdown
+- Do NOT use code fences
+
+Task:
+${prompt}
+`
+        }
+      ]
+    }
+  ]
 });
 
-// HTTPS request options
 const options = {
   hostname: "generativelanguage.googleapis.com",
-  path: `/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`,
+  path: `/v1/models/${MODEL}:generateContent?key=${API_KEY}`,
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "x-goog-api-key": API_KEY
+    "Content-Length": Buffer.byteLength(data)
   }
 };
 
-// Make request
 const req = https.request(options, (res) => {
   let body = "";
-  res.on("data", (chunk) => (body += chunk));
+
+  res.on("data", (chunk) => {
+    body += chunk;
+  });
+
   res.on("end", () => {
     try {
       const json = JSON.parse(body);
@@ -59,22 +67,23 @@ const req = https.request(options, (res) => {
         return;
       }
 
-      // Extract output text
-      const output = json.candidates[0].content.parts[0].text;
+      const rawOutput = json.candidates[0].content.parts[0].text;
+      const cleanOutput = removeComments(rawOutput);
 
-      // Save to a file with timestamp
-      const fileName = `backend_output_${Date.now()}.txt`;
-      fs.writeFileSync(fileName, output, "utf8");
+      const fileName = `output_${Date.now()}.txt`;
+      fs.writeFileSync(fileName, cleanOutput, "utf8");
 
-      console.log(`Response saved to: ${fileName}`);
-      console.log("Check the file for full code, folder structure, and run commands.");
+      console.log("Saved:", fileName);
     } catch (err) {
-      console.error("Error parsing response:", err);
-      console.error("Raw body:", body);
+      console.error("Parse error:", err);
+      console.error(body);
     }
   });
 });
 
-req.on("error", (err) => console.error("Request error:", err));
+req.on("error", (err) => {
+  console.error("Request error:", err);
+});
+
 req.write(data);
 req.end();
